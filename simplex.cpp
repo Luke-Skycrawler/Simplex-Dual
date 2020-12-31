@@ -1,180 +1,233 @@
 #include <iostream>
 #include <string>
+#include <fstream>
 #include <vector>
-#include <assert.h>
-#include <iomanip>
-#define NDEBUG   // assertions enabled
-using namespace std;
-/********************************************
- * input specification
- * n, m #of variables, #of restrictions respectively
- * 'max'/'min' , 'primal'/'dual'
- * c0 ,..., cn-1
- * a01 ,..., a1_n-1, '>='|'<='|'=' , b0
- * ...
- * a_m-1_1 ,..., am-1_n-1, '>='|'<='|'=' , bm-1
-*********************************************
-TODO: simple Euler elimination, disregard Gauss-Siedel in the beginning 
-*********************************************/
-static int m,n;
-#define M (m+n)
-struct simplex_table_collum{
-    // static int M;   // number of all variables, equal to the vector size
-    int var;        // index of the non-base variable
-    vector<double> &a;
-    double b;
-    simplex_table_collum(vector<double> &a=*new vector<double>,double &b=*new double(0.0),int var=-1):a(a),b(b),var(var){}
-    void replace_with(int j){
-        assert(a[j]!=0);
-        var=j;
-    }
-    void normalize(){
-        *this/=a[var];
-    }
-    simplex_table_collum& operator *(double k) const{
-        simplex_table_collum *tmp=new simplex_table_collum(*new vector<double>(a),*new double(b),-1);
-        // FIXME: leakage needed to tend to, don't know how
-        for(int i=0;i<M;i++)tmp->a[i]*=k;
-        tmp->b*=k;
-        return *tmp;
-    }
-    // simplex_table_collum& operator +(const simplex_table_collum &j) const{
-    // }
-    simplex_table_collum& operator -=(const simplex_table_collum &j){
-        for(int i=0;i<M;i++)a[i]+=j.a[i];
-        b+=j.b;
-        return *this;
-    }
-    simplex_table_collum& operator /=(double aij){
-        for(int i=0;i<M;i++)a[i]/=aij;
-        b/=aij;
-        return *this;
-    }
-};
-static vector<simplex_table_collum> collums;
-static int check(vector<simplex_table_collum> &collums,simplex_table_collum &z);
-static int select_base_in(vector<simplex_table_collum> &collums,simplex_table_collum &z);
-static int select_base_out(int _in,vector<simplex_table_collum> &collums);
-int main(void){
-    string arg1,arg2;
-    cin>>n>>m;
-    cin>>arg1>>arg2;
-    assert(arg1=="max");
-    assert(arg2=="primal");
-    vector<double> *a=new vector<double>[m],c;
-    double *b=new double[m];
-    c.resize(m+n);
-    // simplex_table_collum::M=m+n;
-    collums.reserve(m);
-    for(int i=0;i<m+n;i++){
-        double tmp;
-        if(i<n){
-            cin>>tmp;
-            c.push_back(tmp);
-        }
-        else c.push_back(0.0);
-    }
-    simplex_table_collum z(c,*new double(0.0),-1);
-    for(int j=0;j<m;j++)a[j].reserve(m+n);
-    for(int j=0;j<m;j++){
-        string op;
-        // a[j].reserve(m+n);
-        for(int i=0;i<n;i++){
-            double tmp;
-            cin>>tmp;
-            a[j][i]=tmp;
-        }
-        cin>>op;
-        assert(op!=">=");
-        cin>>b[j];
-        if(op=="<="){
-            a[j][m+j]=1.0;
-            collums.push_back(simplex_table_collum(a[j],b[j],j+m));
-        }
-        else if(op=="="){
-            a[j][m+j]=0.0;
-            assert(a[j][j]!=0);
-            // TODO: select a base variable
-            collums.push_back(simplex_table_collum(a[j],b[j],j));
-            collums[j].normalize();
-        }
-    }
-/********************************************
- * end of input section
-*********************************************/
-    int ret,iter=0;
-    do{
-        if(ret=check(collums,z))break;
-        int _in=select_base_in(collums,z);
-        int _out=select_base_out(_in,collums);
-        collums[_out].replace_with(_in);
-        for(int j=0;j<m;j++){
-            if(j==_out)continue;
-            double coeff = collums[j].a[_in]/collums[_out].a[_in];
-            collums[j]-=collums[_out]*coeff;
-        }
-        z-=collums[_out]*(z.a[_in]/collums[_out].a[_in]);
-        collums[_out]/=collums[_out].a[_in];
 
-        cout<<"iteration #"<<iter++<<endl;
-        #ifdef NDEBUG
-        cout<<"swaped in: "<<_in<<"\tswaped out: "<<_out<<endl;
-        for(int j=0;j<m;j++){
-            for(int i=0;i<m+n;i++)cout<<setw(5)<<collums[j].a[i];
-            cout<<"|\t"<<collums[j].b<<endl;
-        }
-        cout<<"************************************"<<endl;
-        #endif
+#define MAXN 201
+#define MAXM 501
+
+using namespace std;
+
+/********************************************
+ * struct definitions
+*********************************************/
+struct outputInfo //Output Information
+{
+    int type;/*
+            0: xj is exactly xj
+            1: xj is actually -xj
+            2: xj is actually xm - xn
+            */
+    int first_aux, second_aux; // m, n
+} output_info[MAXN];
+
+/********************************************
+ * global variables
+*********************************************/
+//input
+int n, m;
+int in_c[MAXN] = {0};
+int in_a[MAXM][MAXN] = {0};
+int in_b[MAXM] = {0}, in_d[MAXM] = {0}, in_e[MAXN] = {0};
+//others
+int var_num;
+vector<double> *a;
+vector<double> b;
+vector<double> c;
+
+/********************************************
+ * function declarations
+*********************************************/
+void readInput(string file_name);
+void standardize();
+
+/********************************************
+ * main()
+*********************************************/
+int main(int argc, char* argv[])
+{
+    
+    if(argc != 2)
+    {
+        cout << "Usage: simplex [input-file]" << endl;
+        return -1;
     }
-    while(1);
-    switch (ret){
-        case 1:
-            cout<<"max z="<<-z.b<<endl;
-            for(int j=0;j<m;j++){       // FIXME: use rank instead of m to be more exact
-                cout<<"x"<<collums[j].var<<"="<<setw(5)<<collums[j].b/collums[j].a[collums[j].var]<<endl;
-            }                
-            break;
-        case -1:cout<<"infinate maximum"<<endl;break;
-        // TODO: notify which variable is the cause
-        case -2:cout<<"no solution"<<endl;break;
-        default:break;
+    readInput(argv[1]);
+    if(n < m)
+    {
+        cout << "[Error] Row rank is not full! Developing..." << endl;
+        return -2;
     }
+    standardize();
     return 0;
 }
-static int check(vector<simplex_table_collum> &collums,simplex_table_collum &z){
-    for(int i=0;i<m+n;i++)if(z.a[i]>0.0){
-        // non-base variable
-        int j=0;
-        for(j=0;j<m;j++){
-            if(collums[j].a[i]>0.0)break;
-            else if(collums[j].b<0.0)
-                return -2;      // no solution
-            // FIXME: possible rank reduction, inspection needed
-        }
-        if(j==m)return -1;      // infinete optimal solution
-        else{
-            z.var=i;
-            return 0;           // continue swapping out
-        }
+
+
+/********************************************
+ * function definitions
+*********************************************/
+void readInput(string file_name)
+{
+    int i, j;
+    ifstream in_file;
+    in_file.open(file_name, ios::in);
+    in_file >> n >> m;
+    for(i = 1; i <= n; i++)
+    {
+        in_file >> in_c[i];
     }
-    return 1;
+    for(i = 1; i <= m; i++)
+    {
+        for(j = 1; j <= n; j++)
+        {
+            in_file >> in_a[i][j];
+        }
+        in_file >> in_b[i] >> in_d[i];
+    }
+    for(i = 1; i <= n; i++)
+    {
+        in_file >> in_e[i];
+    }
+    in_file.close();
+
+    /******************** debug ********************/
+    cout << endl << "Load problem from " << file_name << " successfully!\n**Original LP**" << endl;
+    cout << "min z = ";
+    cout << in_c[1] << "*[x_1]";
+    for(i = 2; i <= n; i++)
+    {
+        cout << " + " << in_c[i] << "*[x_" << i << "]";
+    }
+    cout << endl;
+    for(i = 1; i <= m; i++)
+    {
+        cout << in_a[i][1] << "*[x_1]";
+        for(j = 2; j <= n; j++)
+        {
+            cout << " + " << in_a[i][j] << "*[x_" << j << "]";
+        }
+        if(in_d[i] < 0) 
+            cout << " ≤ " << in_b[i] << endl;
+        else if(in_d[i] == 0) 
+            cout << " = " << in_b[i] << endl;
+        else
+            cout << " ≥ " << in_b[i] << endl;
+    }
+    for(j = 1; j <= n; j++)
+    {
+        if(in_e[j] == -1)
+            cout << "[x_" << j << "]" << " ≤ 0" << endl;
+        else if(in_e[j] == 1)
+            cout << "[x_" << j << "]" << " ≥ 0" << endl;
+        else
+            cout << "[x_" << j << "]" << " <> 0" << endl;
+    }
 }
-inline static int select_base_in(vector<simplex_table_collum> &collums,simplex_table_collum &z){
-    return z.var;               // refer to check for information
-}
-static int select_base_out(int i,vector<simplex_table_collum> &collums){
-    static int min,index_min;
-    int init=1;
-    for(int j=0;j<m;j++){
-        if(collums[j].a[i]<=0)continue;
-        else {
-            double threshold=collums[j].b/collums[j].a[i];
-            if(init||threshold<min){
-                min=threshold;
-                index_min=j;
-                if(init)init=0;
+
+void standardize()
+{
+    int i, j;
+    int new_var_num = 0; //record of newly added variables
+
+    //initialize global variables
+    a = new vector<double>[m + 1]; //malloc for matrix `a`
+    b.push_back(0.0);
+    c.push_back(0.0);
+
+    /*  copy `in_a` -> `a`
+        copy `in_b` -> `b`
+        copy -`in_c` -> `c` (min -> max)
+    */
+    for(i = 1; i <= m; i++)
+    {
+        a[i].push_back(0.0);
+        for(j = 1; j <= n; j++)
+        {
+            a[i].push_back(in_a[i][j]);
+        }
+        
+        b.push_back(in_b[i]);
+    }
+    for(j = 1; j <= n; j++)
+    {
+        c.push_back(-in_c[j]);
+    }
+
+    //Check e_j
+    for(j = 1; j <= n; j++)
+    {
+        if(in_e[j] == -1) //flip over c_j & a_ij, i = 1, 2, ..., m
+        {
+            c[j] *= -1;
+            for(i = 1; i <= m; i++)
+            {
+                a[i][j] *= -1;
             }
+            //mark on output info
+            output_info[j].type = 1; 
+        }
+        else if(in_e[j] == 0) //transform x_j into 2 nonnegative auxiliary variables -- x_j = x_m - x_n
+        {
+            c.push_back(-c[j]);
+            for(i = 1; i <= m; i++)
+            {
+                a[i].push_back(-a[i][j]);
+            }
+            new_var_num += 1; //record the newly added variable
+            //mark on output info
+            output_info[j].type = 2;
+            output_info[j].first_aux = j;
+            output_info[j].second_aux = n + new_var_num;
+        }
+        else
+        {
+            output_info[j].type = 0;
         }
     }
-    return index_min;
+
+    //Check d_i
+    for(i = 1; i <= m; i++)
+    {
+        if(in_d[i] == -1) // <=; add a nonnegative auxiliary to the left 
+        {
+            c.push_back(0.0);
+            for(int k = 1; k <= m; k++)
+            {
+                a[k].push_back((k==i)); //for row i, new coefficient `1` is pushed
+                                       //otherwise, `0` is pushed
+            }
+            new_var_num += 1; //record the newly added variable
+        }
+        else if(in_d[i] == 1) // >=; substract a nonnegative auxiliary to the left 
+        {
+            c.push_back(0.0);
+            for(int k = 1; k <= m; k++)
+            {
+                a[k].push_back(-(k==i)); //for row i, new coefficient `-1` is pushed
+                                        //otherwise, `0` is pushed
+            }
+            new_var_num += 1; //record the newly added variable
+        }
+    }
+
+    var_num = n + new_var_num; //update global record for variables' number
+
+    /******************** debug ********************/
+    cout << endl << "**Standard LP**" << endl;
+    cout << "max -z = ";
+    cout << c[1] << "*[x_1]";
+    for(i = 2; i <= var_num; i++)
+    {
+        cout << " + " << c[i] << "*[x_" << i << "]";
+    }
+    cout << endl;
+    for(i = 1; i <= m; i++)
+    {
+        cout << a[i][1] << "*[x_1]";
+        for(j = 2; j <= var_num; j++)
+        {
+            cout << " + " << a[i][j] << "*[x_" << j << "]";
+        }
+        cout << " = " << b[i] << endl;
+    }
 }
