@@ -2,6 +2,7 @@
 an naive, test-rich implementation of simplex algorithm 
 
 unit tests
-[ ] 0 solution
-[ ] inf
-[ ] ranks
+- [x] fail at input
+- [ ] 0 solution
+- [ ] inf
+- [ ] ranks
