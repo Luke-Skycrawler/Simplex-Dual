@@ -6,7 +6,7 @@
 #include <fstream>
 #define NDEBUG   // assertions enabled
 #define UNIT_TEST
-#define EPS 10e-10
+#define EPS 5e-7
 using namespace std;
 /********************************************
  * input specification
@@ -18,6 +18,7 @@ using namespace std;
  * a_m-1_1 ,..., am-1_n-1, '>='|'<='|'=' , bm-1
 *********************************************
 TODO: simple Euler elimination, disregard Gauss-Siedel in the beginning 
+TODO: FIXME: fix peculiar cases: infeasible, degeneracy, nexample
 *********************************************/
 static int m,n;
 struct simplex_table_row{
@@ -81,7 +82,7 @@ int main(int argc,char **argv){
     _input>>n>>m;
     vector<double> *a=new vector<double>[m],c;
     // FIXME: #0 CLOSED target is min
-    // FIXME: #5 output syntax
+    // FIXME: #5 CLOSED output format
     double *b=new double[m];
 	c.reserve(m+n);
     c.resize(0);
@@ -156,16 +157,39 @@ int main(int argc,char **argv){
     while(1);
     switch (ret){
         case 1:
-            cout<<"min z="<<(-z.b)<<endl;   // FIXME: #4 output -0
+            cout<<"min z="<<(-z.b)<<endl;   // FIXME: #4 CLOSED output -0
             for(int j=0;j<m;j++){       // FIXME: #2 use rank instead of m to be more exact
                 cout<<"x"<<rows[j].var<<"="<<setw(5)<<rows[j].b/rows[j].a[rows[j].var]<<endl;
             }                
             break;
-        case -1:cout<<"infinate maximum"<<endl;break;
+        case -1:ret++;cout<<"infinate maximum"<<endl;break;
         // TODO: notify which variable is the cause
-        case -2:cout<<"no solution"<<endl;break;
+        case -2:ret++;cout<<"no solution"<<endl;break;
         default:break;
     }
+    #ifdef UNIT_TEST
+        string _output_filename(argv[1]);
+        _output_filename.replace(_output_filename.find("txt"),3,"out");
+        ofstream fout;
+        fout.open(_output_filename);
+        fout<<ret<<endl;
+        if(ret==1){
+            if(z.b<EPS&&z.b>=0.0)fout<<0<<endl;
+            else 
+                fout<<fixed<<setprecision(6)<<-z.b<<endl;
+            double* map=new double[n];
+            for(int j=0;j<m;j++){
+                if(rows[j].var<n)
+                    map[rows[j].var]=rows[j].b/rows[j].a[rows[j].var];
+            }
+            for(int i=0;i<n;i++){
+                if(map[i]<0.0&&map[i]>-EPS)map[i]=0.0;
+                fout<<fixed<<setprecision(6)<<map[i]<<" ";
+            }
+            delete []map;
+        }
+        fout.close();
+    #endif
     return 0;
 }
 static int check(vector<simplex_table_row> &rows,simplex_table_row &z){
