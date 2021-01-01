@@ -1,0 +1,5 @@
+*.exe
+simplex/*
+*.obj
+test1/*
+LinearSolver-master/*
