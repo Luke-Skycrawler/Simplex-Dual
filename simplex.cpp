@@ -3,6 +3,7 @@
 #include <vector>
 #include <assert.h>
 #include <iomanip>
+#include <fstream>
 #define NDEBUG   // assertions enabled
 using namespace std;
 /********************************************
@@ -17,9 +18,8 @@ using namespace std;
 TODO: simple Euler elimination, disregard Gauss-Siedel in the beginning 
 *********************************************/
 static int m,n;
-#define M (m+n)
 struct simplex_table_collum{
-    // static int M;   // number of all variables, equal to the vector size
+    static int M;   // number of all variables, equal to the vector size
     int var;        // index of the non-base variable
     vector<double> &a;
     double b;
@@ -31,9 +31,15 @@ struct simplex_table_collum{
     void normalize(){
         *this/=a[var];
     }
+    
     simplex_table_collum& operator *(double k) const{
-        simplex_table_collum *tmp=new simplex_table_collum(*new vector<double>(a),*new double(b),-1);
-        // FIXME: leakage needed to tend to, don't know how
+        if(tmp_vec)delete tmp_vec;
+        if(tmp_double)delete tmp_double;
+        if(tmp)delete tmp;
+        tmp_vec=new vector<double>(a);
+        tmp_double=new double(b);
+        tmp=new simplex_table_collum(*tmp_vec,*tmp_double,-1);
+        // FIXME: #1 CLOSED (but not beautifully) leakage needed to tend to, don't know how
         for(int i=0;i<M;i++)tmp->a[i]*=k;
         tmp->b*=k;
         return *tmp;
@@ -50,18 +56,29 @@ struct simplex_table_collum{
         b/=aij;
         return *this;
     }
+    private:
+    static simplex_table_collum *tmp;
+    static vector<double> *tmp_vec;
+    static double *tmp_double;
 };
+int simplex_table_collum::M;
+simplex_table_collum* simplex_table_collum::tmp=NULL;
+vector<double>* simplex_table_collum::tmp_vec=NULL;
+double* simplex_table_collum::tmp_double=NULL; 
 static vector<simplex_table_collum> collums;
 static int check(vector<simplex_table_collum> &collums,simplex_table_collum &z);
 static int select_base_in(vector<simplex_table_collum> &collums,simplex_table_collum &z);
 static int select_base_out(int _in,vector<simplex_table_collum> &collums);
-int main(void){
-    string arg1,arg2;
-    cin>>n>>m;
-    cin>>arg1>>arg2;
-    assert(arg1=="max");
-    assert(arg2=="primal");
+int main(int argc,char **argv){
+    ifstream _input;
+    #ifdef UNIT_TEST
+    _input.open(argv[1]);
+    #else
+    _input.open("test2.0.txt");
+    #endif
+    _input>>n>>m;
     vector<double> *a=new vector<double>[m],c;
+    // FIXME: #0 target is min
     double *b=new double[m];
 	c.reserve(m+n);
     c.resize(0);
@@ -70,7 +87,7 @@ int main(void){
     for(int i=0;i<m+n;i++){
         double tmp;
         if(i<n){
-            cin>>tmp;
+            _input>>tmp;
             c.push_back(tmp);
         }
         else c.push_back(0.0);
@@ -78,21 +95,20 @@ int main(void){
     simplex_table_collum z(c,*new double(0.0),-1);
     for(int j=0;j<m;j++)a[j].resize(m+n);
     for(int j=0;j<m;j++){
-        string op;
+        int op;
         // a[j].reserve(m+n);
         for(int i=0;i<n;i++){
             double tmp;
-            cin>>tmp;
+            _input>>tmp;
             a[j][i]=tmp;
         }
-        cin>>op;
-        assert(op!=">=");
-        cin>>b[j];
-        if(op=="<="){
+        assert(op!=1);
+        _input>>b[j]>>op;
+        if(op==-1){
             a[j][m+j]=1.0;
             collums.push_back(simplex_table_collum(a[j],b[j],j+m));
         }
-        else if(op=="="){
+        else if(op==0){
             a[j][m+j]=0.0;
             assert(a[j][j]!=0);
             // TODO: select a base variable
@@ -100,6 +116,13 @@ int main(void){
             collums[j].normalize();
         }
     }
+    int e;
+    for(int i=0;i<n;i++){
+        _input>>e;
+        assert(e==1);
+    }
+    _input.close();
+    simplex_table_collum::M=m+n;
 /********************************************
  * end of input section
 *********************************************/
@@ -131,7 +154,7 @@ int main(void){
     switch (ret){
         case 1:
             cout<<"max z="<<-z.b<<endl;
-            for(int j=0;j<m;j++){       // FIXME: use rank instead of m to be more exact
+            for(int j=0;j<m;j++){       // FIXME: #2 use rank instead of m to be more exact
                 cout<<"x"<<collums[j].var<<"="<<setw(5)<<collums[j].b/collums[j].a[collums[j].var]<<endl;
             }                
             break;
@@ -150,7 +173,7 @@ static int check(vector<simplex_table_collum> &collums,simplex_table_collum &z){
             if(collums[j].a[i]>0.0)break;
             else if(collums[j].b<0.0)
                 return -2;      // no solution
-            // FIXME: possible rank reduction, inspection needed
+            // FIXME: #3 possible rank reduction, inspection needed
         }
         if(j==m)return -1;      // infinete optimal solution
         else{
