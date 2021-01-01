@@ -41,8 +41,8 @@ struct simplex_table_collum{
     // simplex_table_collum& operator +(const simplex_table_collum &j) const{
     // }
     simplex_table_collum& operator -=(const simplex_table_collum &j){
-        for(int i=0;i<M;i++)a[i]+=j.a[i];
-        b+=j.b;
+        for(int i=0;i<M;i++)a[i]-=j.a[i];
+        b-=j.b;
         return *this;
     }
     simplex_table_collum& operator /=(double aij){
@@ -63,7 +63,8 @@ int main(void){
     assert(arg2=="primal");
     vector<double> *a=new vector<double>[m],c;
     double *b=new double[m];
-    c.resize(m+n);
+	c.reserve(m+n);
+    c.resize(0);
     // simplex_table_collum::M=m+n;
     collums.reserve(m);
     for(int i=0;i<m+n;i++){
@@ -75,7 +76,7 @@ int main(void){
         else c.push_back(0.0);
     }
     simplex_table_collum z(c,*new double(0.0),-1);
-    for(int j=0;j<m;j++)a[j].reserve(m+n);
+    for(int j=0;j<m;j++)a[j].resize(m+n);
     for(int j=0;j<m;j++){
         string op;
         // a[j].reserve(m+n);

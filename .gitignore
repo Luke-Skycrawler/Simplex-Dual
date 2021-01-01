@@ -1,1 +1,4 @@
 *.exe
+simplex/*
+*.obj
+test1/*
