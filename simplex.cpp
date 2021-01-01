@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <fstream>
 #define NDEBUG   // assertions enabled
+#define UNIT_TEST
+#define EPS 10e-10
 using namespace std;
 /********************************************
  * input specification
@@ -78,7 +80,8 @@ int main(int argc,char **argv){
     #endif
     _input>>n>>m;
     vector<double> *a=new vector<double>[m],c;
-    // FIXME: #0 target is min
+    // FIXME: #0 CLOSED target is min
+    // FIXME: #5 output syntax
     double *b=new double[m];
 	c.reserve(m+n);
     c.resize(0);
@@ -153,7 +156,7 @@ int main(int argc,char **argv){
     while(1);
     switch (ret){
         case 1:
-            cout<<"max z="<<-z.b<<endl;
+            cout<<"min z="<<(-z.b)<<endl;   // FIXME: #4 output -0
             for(int j=0;j<m;j++){       // FIXME: #2 use rank instead of m to be more exact
                 cout<<"x"<<collums[j].var<<"="<<setw(5)<<collums[j].b/collums[j].a[collums[j].var]<<endl;
             }                
@@ -166,7 +169,7 @@ int main(int argc,char **argv){
     return 0;
 }
 static int check(vector<simplex_table_collum> &collums,simplex_table_collum &z){
-    for(int i=0;i<m+n;i++)if(z.a[i]>0.0){
+    for(int i=0;i<m+n;i++)if(z.a[i]<0.0){   // NOTE: #0 modified '<' to change min/max
         // non-base variable
         int j=0;
         for(j=0;j<m;j++){
