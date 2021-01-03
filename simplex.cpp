@@ -7,6 +7,7 @@
 #include <cmath>
 #include <map>
 // #define NDEBUG   // assertions enabled
+// #define CASE__NDEBUG
 #define UNIT_TEST
 #define EPS 5e-7
 using namespace std;
@@ -84,7 +85,7 @@ int main(int argc,char **argv){
     #ifdef UNIT_TEST
     _input.open(argv[1]);
     #else
-    _input.open("testprob.txt");
+    _input.open("adlittle.txt");
     #endif
     _input>>n>>m;
     vector<double> *a=new vector<double>[m],c;
@@ -135,11 +136,16 @@ int main(int argc,char **argv){
         _input>>e;
         if(e==-1)
             for(int j=0;j<m;j++){
-                rows[j].a[i]=-rows[j].a[i];
-                if(rows[j].var==i)rows[j].normalize();
+                rows[j].a.push_back(-rows[j].a[i]);
+                rows[j].a[i]=0.0;
+                if(rows[j].var==i){
+                    rows[j].var=simplex_table_row::M;
+                    rows[j].normalize();
+                }
+                counterpart[simplex_table_row::M++]=i;
+                // FIXME: CLOSED output should know this change in sign
             }
         else if(e==0){
-            // FIXME: not precise m
             for(int j=0;j<m;j++)
                 rows[j].a.push_back(-rows[j].a[i]);
             z.a.push_back(-z.a[i]);
@@ -199,14 +205,26 @@ int main(int argc,char **argv){
 
     int iter=0;
     do{
+        int _in,_out,j;
         if(ret)break;
-        int _in,_out;
-        int bit=1;
-        for(int j=0;j<m;j++)if(rows[j].b<0.0){
+        #ifdef CASE__NDEBUG
+        try{
+            for(j=0;j<m;j++){
+                if(b[j]<-EPS){
+                    cout<<j<<" "<<b[j]<<" "<<iter<<endl;
+                }
+                assert(b[j]>=-EPS);
+                // assert(rows[j].a[rows[j].var]==1.0);
+            }
+        }
+        catch(...){
+            cout<<"error"<<endl;
+        }
+        #endif
+        for(j=0;j<m;j++)if(rows[j].b<-EPS){
             int k;
-            bit=0;
             for(k=0;k<(simplex_table_row::M);k++)
-                if(rows[j].a[k]<0.0)break;
+                if(rows[j].a[k]<-EPS)break;
             if(k==simplex_table_row::M)
                 ret=-2;      // no solution if all the variables have positive coeffients
             else{
@@ -214,22 +232,23 @@ int main(int argc,char **argv){
                 _out=j;
                 ret=0;
             } 
+            break;
         }
         if(ret)break;
-        if(bit){
+        if(j==m){
             if(ret=check(rows,z))break;
             _in=select_base_in(rows,z);
             _out=select_base_out(_in,rows);
         }
         rows[_out].replace_with(_in);
-        for(int j=0;j<m;j++){
+        for(j=0;j<m;j++){
             if(j==_out)continue;
             double coeff = rows[j].a[_in]/rows[_out].a[_in];
             rows[j]-=rows[_out]*coeff;
         }
         z-=rows[_out]*(z.a[_in]/rows[_out].a[_in]);
         rows[_out]/=rows[_out].a[_in];
-        cout<<"iteration #"<<iter++<<endl;
+        cout<<"iteration #"<<iter++<<"  "<<-z.b<<endl;
         #ifdef NDEBUG
         cout<<"swaped in: "<<_in<<"\tswaped out: "<<_out<<endl;
         for(int j=0;j<m;j++){
@@ -280,11 +299,11 @@ int main(int argc,char **argv){
     return 0;
 }
 static int check(vector<simplex_table_row> &rows,simplex_table_row &z){
-    for(int i=0;i<simplex_table_row::M;i++)if(z.a[i]<0.0){   // NOTE: #0 modified '<' to change min/max
+    for(int i=0;i<simplex_table_row::M;i++)if(z.a[i]<-EPS){   // NOTE: #0 modified '<' to change min/max
         // non-base variable
         int j=0;
         for(j=0;j<m;j++){
-            if(rows[j].a[i]>0.0)break;
+            if(rows[j].a[i]>EPS)break;
             // FIXME: #3 CLOSED possible rank reduction, inspection needed
         }
         if(j==m)return -1;      // infinete optimal solution
@@ -302,7 +321,7 @@ static int select_base_out(int i,vector<simplex_table_row> &rows){
     static int min,index_min;
     int init=1;
     for(int j=0;j<m;j++){
-        if(rows[j].a[i]<=0)continue;
+        if(rows[j].a[i]<=EPS)continue;
         else {
             double threshold=rows[j].b/rows[j].a[i];
             if(init||threshold<min){
