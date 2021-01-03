@@ -5,7 +5,9 @@
 #include <iomanip>
 #include <fstream>
 #include <cmath>
-#define NDEBUG   // assertions enabled
+#include <map>
+// #define NDEBUG   // assertions enabled
+// #define CASE__NDEBUG
 #define UNIT_TEST
 #define EPS 5e-7
 using namespace std;
@@ -83,14 +85,14 @@ int main(int argc,char **argv){
     #ifdef UNIT_TEST
     _input.open(argv[1]);
     #else
-    _input.open("nexample.txt");
+    _input.open("adlittle.txt");
     #endif
     _input>>n>>m;
     vector<double> *a=new vector<double>[m],c;
     // FIXME: #0 CLOSED target is min
     // FIXME: #5 CLOSED output format
     double *b=new double[m];
-	c.reserve(m+n);
+	c.reserve(2*m+n);
     c.resize(0);
     // simplex_table_row::M=m+n;
     rows.reserve(m);
@@ -102,8 +104,12 @@ int main(int argc,char **argv){
         }
         else c.push_back(0.0);
     }
+    simplex_table_row::M=m+n;
     simplex_table_row z(c,*new double(0.0),-1);
-    for(int j=0;j<m;j++)a[j].resize(m+n);
+    for(int j=0;j<m;j++){
+        a[j].reserve(2*m+n);
+        a[j].resize(m+n);
+    }
     for(int j=0;j<m;j++){
         int op;
         // a[j].reserve(m+n);
@@ -112,12 +118,12 @@ int main(int argc,char **argv){
             _input>>tmp;
             a[j][i]=tmp;
         }
-        assert(op!=1);
         _input>>b[j]>>op;
         if(op==-1||op==1){
-            a[j][m-1+j]=-op;
-            rows.push_back(simplex_table_row(a[j],b[j],j+m-1));
-            if(op==1)rows[j]/=-1.0;
+            a[j][n+j]=-op;
+            rows.push_back(simplex_table_row(a[j],b[j],j+n));
+            if(op==1)
+                rows[j].normalize();
         }
         else if(op==0){
             a[j][m-1+j]=0.0;
@@ -125,12 +131,28 @@ int main(int argc,char **argv){
         }
     }
     int e;
+    map<int,int> counterpart;
     for(int i=0;i<n;i++){
         _input>>e;
-        assert(e==1);
+        if(e==-1)
+            for(int j=0;j<m;j++){
+                rows[j].a.push_back(-rows[j].a[i]);
+                rows[j].a[i]=0.0;
+                if(rows[j].var==i){
+                    rows[j].var=simplex_table_row::M;
+                    rows[j].normalize();
+                }
+                counterpart[simplex_table_row::M++]=i;
+                // FIXME: CLOSED output should know this change in sign
+            }
+        else if(e==0){
+            for(int j=0;j<m;j++)
+                rows[j].a.push_back(-rows[j].a[i]);
+            z.a.push_back(-z.a[i]);
+            counterpart[simplex_table_row::M++]=i;
+        }
     }
     _input.close();
-    simplex_table_row::M=m+n;
 /********************************************
  * end of input section
 /********************************************
@@ -150,6 +172,7 @@ int main(int argc,char **argv){
                 if(j==k)continue;
                 rows[k]-=rows[j]*(rows[k].a[i]/rows[j].a[i]);
             }
+            z-=rows[j]*(z.a[i]/rows[j].a[i]);
             rows[j].normalize();
             break;
         }
@@ -165,35 +188,67 @@ int main(int argc,char **argv){
             for(i=0;i<n;i++)if(fabs(rows[j].a[i])>EPS)break;
             if(i==n){
                 if(rows[j].b==0.0)
-                    rows[j--]=rows[--m];
+                    rows[j--]=rows[--m];    //elegant
                 else ret=-2;
             }
         }
     }
     // TODO: examine if any b[i]<0 with var!=-1
-    for(int j=0;j<m;j++)
-        if(rows[j].b<0.0)
-            ret=-2;
+            // for(int j=0;j<m;j++)
+            //     if(rows[j].b<0.0)
+            //         ret=-2;
+            // // FIXME: selecting a feasible base not that easy
+    // facing bj<0 scenario
 /********************************************
- * feasible solution built
+ * feasible solution not built yet (with some negative base variables)
 ********************************************/
 
     int iter=0;
     do{
+        int _in,_out,j;
         if(ret)break;
-        if(ret=check(rows,z))break;
-        int _in=select_base_in(rows,z);
-        int _out=select_base_out(_in,rows);
+        #ifdef CASE__NDEBUG
+        try{
+            for(j=0;j<m;j++){
+                if(b[j]<-EPS){
+                    cout<<j<<" "<<b[j]<<" "<<iter<<endl;
+                }
+                assert(b[j]>=-EPS);
+                // assert(rows[j].a[rows[j].var]==1.0);
+            }
+        }
+        catch(...){
+            cout<<"error"<<endl;
+        }
+        #endif
+        for(j=0;j<m;j++)if(rows[j].b<-EPS){
+            int k;
+            for(k=0;k<(simplex_table_row::M);k++)
+                if(rows[j].a[k]<-EPS)break;
+            if(k==simplex_table_row::M)
+                ret=-2;      // no solution if all the variables have positive coeffients
+            else{
+                _in=k;
+                _out=j;
+                ret=0;
+            } 
+            break;
+        }
+        if(ret)break;
+        if(j==m){
+            if(ret=check(rows,z))break;
+            _in=select_base_in(rows,z);
+            _out=select_base_out(_in,rows);
+        }
         rows[_out].replace_with(_in);
-        for(int j=0;j<m;j++){
+        for(j=0;j<m;j++){
             if(j==_out)continue;
             double coeff = rows[j].a[_in]/rows[_out].a[_in];
             rows[j]-=rows[_out]*coeff;
         }
         z-=rows[_out]*(z.a[_in]/rows[_out].a[_in]);
         rows[_out]/=rows[_out].a[_in];
-
-        cout<<"iteration #"<<iter++<<endl;
+        cout<<"iteration #"<<iter++<<"  "<<-z.b<<endl;
         #ifdef NDEBUG
         cout<<"swaped in: "<<_in<<"\tswaped out: "<<_out<<endl;
         for(int j=0;j<m;j++){
@@ -218,7 +273,7 @@ int main(int argc,char **argv){
     }
     #ifdef UNIT_TEST
         string _output_filename(argv[1]);
-        _output_filename.replace(_output_filename.find("txt"),3,"out");
+        _output_filename.replace(_output_filename.find("txt"),3,"out1");
         ofstream fout;
         fout.open(_output_filename);
         fout<<ret<<endl;
@@ -229,7 +284,9 @@ int main(int argc,char **argv){
             double* map=new double[n];
             for(int j=0;j<m;j++){
                 if(rows[j].var<n)
-                    map[rows[j].var]=rows[j].b/rows[j].a[rows[j].var];
+                    map[rows[j].var]+=rows[j].b/rows[j].a[rows[j].var];
+                else if(counterpart.count(rows[j].var))
+                    map[counterpart[rows[j].var]]-=rows[j].b/rows[j].a[rows[j].var];
             }
             for(int i=0;i<n;i++){
                 if(map[i]<0.0&&map[i]>-EPS)map[i]=0.0;
@@ -242,13 +299,11 @@ int main(int argc,char **argv){
     return 0;
 }
 static int check(vector<simplex_table_row> &rows,simplex_table_row &z){
-    for(int i=0;i<simplex_table_row::M;i++)if(z.a[i]<0.0){   // NOTE: #0 modified '<' to change min/max
+    for(int i=0;i<simplex_table_row::M;i++)if(z.a[i]<-EPS){   // NOTE: #0 modified '<' to change min/max
         // non-base variable
         int j=0;
         for(j=0;j<m;j++){
-            if(rows[j].a[i]>0.0)break;
-            else if(rows[j].b<0.0)
-                return -2;      // no solution
+            if(rows[j].a[i]>EPS)break;
             // FIXME: #3 CLOSED possible rank reduction, inspection needed
         }
         if(j==m)return -1;      // infinete optimal solution
@@ -266,7 +321,7 @@ static int select_base_out(int i,vector<simplex_table_row> &rows){
     static int min,index_min;
     int init=1;
     for(int j=0;j<m;j++){
-        if(rows[j].a[i]<=0)continue;
+        if(rows[j].a[i]<=EPS)continue;
         else {
             double threshold=rows[j].b/rows[j].a[i];
             if(init||threshold<min){
