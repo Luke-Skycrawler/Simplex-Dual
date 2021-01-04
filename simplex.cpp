@@ -30,6 +30,9 @@ struct simplex_table_row{
     vector<double> &a;
     double &b;
     simplex_table_row(vector<double> &a=*new vector<double>,double &b=*new double(0.0),int var=-1):a(a),b(b),var(var){}
+    simplex_table_row(const simplex_table_row &s):a(*new vector<double>),b(*new double(s.b)),var(s.var){
+        for(int i=0;i<M;i++)a.push_back(s.a[i]);
+    }
     void replace_with(int j){
         assert(a[j]!=0);
         var=j;
@@ -37,7 +40,6 @@ struct simplex_table_row{
     void normalize(){
         *this/=a[var];
     }
-    
     simplex_table_row& operator *(double k) const{
         if(tmp_vec)delete tmp_vec;
         if(tmp_double)delete tmp_double;
@@ -50,8 +52,6 @@ struct simplex_table_row{
         tmp->b*=k;
         return *tmp;
     }
-    // simplex_table_row& operator +(const simplex_table_row &j) const{
-    // }
     simplex_table_row& operator =(const simplex_table_row &j){
         a=j.a;
         b=j.b;
@@ -80,133 +80,28 @@ static vector<simplex_table_row> rows;
 static int check(vector<simplex_table_row> &rows,simplex_table_row &z);
 static int select_base_in(vector<simplex_table_row> &rows,simplex_table_row &z);
 static int select_base_out(int _in,vector<simplex_table_row> &rows);
-int main(int argc,char **argv){
-    ifstream _input;
-    #ifdef UNIT_TEST
-    _input.open(argv[1]);
-    #else
-    _input.open("adlittle.txt");
-    #endif
-    _input>>n>>m;
-    vector<double> *a=new vector<double>[m],c;
-    // FIXME: #0 CLOSED target is min
-    // FIXME: #5 CLOSED output format
-    double *b=new double[m];
-	c.reserve(2*m+n);
-    c.resize(0);
-    // simplex_table_row::M=m+n;
-    rows.reserve(m);
-    for(int i=0;i<m+n;i++){
-        double tmp;
-        if(i<n){
-            _input>>tmp;
-            c.push_back(tmp);
-        }
-        else c.push_back(0.0);
-    }
-    simplex_table_row::M=m+n;
-    simplex_table_row z(c,*new double(0.0),-1);
-    for(int j=0;j<m;j++){
-        a[j].reserve(2*m+n);
-        a[j].resize(m+n);
-    }
-    for(int j=0;j<m;j++){
-        int op;
-        // a[j].reserve(m+n);
-        for(int i=0;i<n;i++){
-            double tmp;
-            _input>>tmp;
-            a[j][i]=tmp;
-        }
-        _input>>b[j]>>op;
-        if(op==-1||op==1){
-            a[j][n+j]=-op;
-            rows.push_back(simplex_table_row(a[j],b[j],j+n));
-            if(op==1)
-                rows[j].normalize();
-        }
-        else if(op==0){
-            a[j][m-1+j]=0.0;
-            rows.push_back(simplex_table_row(a[j],b[j],-1));
-        }
-    }
-    int e;
-    map<int,int> counterpart;
-    for(int i=0;i<n;i++){
-        _input>>e;
-        if(e==-1)
-            for(int j=0;j<m;j++){
-                rows[j].a.push_back(-rows[j].a[i]);
-                rows[j].a[i]=0.0;
-                if(rows[j].var==i){
-                    rows[j].var=simplex_table_row::M;
-                    rows[j].normalize();
-                }
-                counterpart[simplex_table_row::M++]=i;
-                // FIXME: CLOSED output should know this change in sign
-            }
-        else if(e==0){
-            for(int j=0;j<m;j++)
-                rows[j].a.push_back(-rows[j].a[i]);
-            z.a.push_back(-z.a[i]);
-            counterpart[simplex_table_row::M++]=i;
-        }
-    }
-    _input.close();
-/********************************************
- * end of input section
-/********************************************
- * select the base variable bundle
- * naive, without pivoting
- * numerical error could be overwhelming
-*********************************************/
-    int base_cnt;
-    for(int i=0;i<n;i++){
-        base_cnt=0;
-        for(int j=0;j<m;j++){
-            if(rows[j].var!=-1)base_cnt++;
-            if(rows[j].var!=-1||fabs(rows[j].a[i])<EPS)continue;
-            rows[j].var=i;
-            base_cnt++;
-            for(int k=0;k<m;k++){
-                if(j==k)continue;
-                rows[k]-=rows[j]*(rows[k].a[i]/rows[j].a[i]);
-            }
-            z-=rows[j]*(z.a[i]/rows[j].a[i]);
-            rows[j].normalize();
-            break;
-        }
-        if(base_cnt==m)break;
-    }
-    base_cnt=0;
-    for(int j=0;j<m;j++)if(rows[j].var!=-1)base_cnt++;
-    int ret=0;
-    if(base_cnt<m){
-        // search for zero row
-        for(int j=0;j<m;j++){
-            int i;
-            for(i=0;i<n;i++)if(fabs(rows[j].a[i])>EPS)break;
-            if(i==n){
-                if(rows[j].b==0.0)
-                    rows[j--]=rows[--m];    //elegant
-                else ret=-2;
-            }
-        }
-    }
-    // TODO: examine if any b[i]<0 with var!=-1
-            // for(int j=0;j<m;j++)
-            //     if(rows[j].b<0.0)
-            //         ret=-2;
-            // // FIXME: selecting a feasible base not that easy
-    // facing bj<0 scenario
-/********************************************
- * feasible solution not built yet (with some negative base variables)
-********************************************/
-
-    int iter=0;
+static int solveLP_non_const(vector<simplex_table_row> &rows,simplex_table_row &z);
+static int solveLP(vector<simplex_table_row> &_rows,simplex_table_row &z){
+    vector<simplex_table_row> rows;
+    for(int j=0;j<m;j++)
+        rows.push_back(_rows[j]);
+    int ret=solveLP_non_const(rows,z);
+    // if(ret==1)for(int j=0;j<m;j++){
+    //     int i=_rows[j].var=rows[j].var;
+    //     for(int k=0;k<m;k++)if(k!=j){
+    //         rows[k]-=rows[j]*(rows[k].a[i]/rows[j].a[i]);
+    //     }
+    //     z-=rows[j]*(z.a[i]/rows[j].a[i]);
+    //     rows[j].normalize();
+    //     // possible error
+    // }
+    return ret;
+}
+static int solveLP_non_const(vector<simplex_table_row> &rows,simplex_table_row &z){
+    int ret=0,iter=0;
     do{
         int _in,_out,j;
-        if(ret)break;
+        // if(ret)break;
         #ifdef CASE__NDEBUG
         try{
             for(j=0;j<m;j++){
@@ -221,25 +116,10 @@ int main(int argc,char **argv){
             cout<<"error"<<endl;
         }
         #endif
-        for(j=0;j<m;j++)if(rows[j].b<-EPS){
-            int k;
-            for(k=0;k<(simplex_table_row::M);k++)
-                if(rows[j].a[k]<-EPS)break;
-            if(k==simplex_table_row::M)
-                ret=-2;      // no solution if all the variables have positive coeffients
-            else{
-                _in=k;
-                _out=j;
-                ret=0;
-            } 
-            break;
-        }
-        if(ret)break;
-        if(j==m){
-            if(ret=check(rows,z))break;
-            _in=select_base_in(rows,z);
-            _out=select_base_out(_in,rows);
-        }
+        if(ret=check(rows,z))break;
+        _in=select_base_in(rows,z);
+        _out=select_base_out(_in,rows);
+        // }
         rows[_out].replace_with(_in);
         for(j=0;j<m;j++){
             if(j==_out)continue;
@@ -258,12 +138,168 @@ int main(int argc,char **argv){
         cout<<"************************************"<<endl;
         #endif
     }
-    while(1);
+    while(1);    
+    return ret;
+}
+int main(int argc,char **argv){
+    ifstream _input;
+    #ifdef UNIT_TEST
+    _input.open(argv[1]);
+    #else
+    _input.open("adlittle.txt");
+    #endif
+    _input>>n>>m;
+    vector<double> *a=new vector<double>[m];
+    vector<double> c,c0;
+    c0.reserve(3*m+n);
+    c0.resize(m+n);
+	c.reserve(3*m+n);
+    c.resize(0);
+    // FIXME: #0 CLOSED target is min
+    // FIXME: #5 CLOSED output format
+    double *b=new double[m];
+    simplex_table_row::M=m+n;
+    rows.reserve(m);
+    for(int i=0;i<m+n;i++){
+        double tmp;
+        if(i<n){
+            _input>>tmp;
+            c.push_back(tmp);
+        }
+        else c.push_back(0.0);
+    }
+    simplex_table_row z(c,*new double(0.0),-1);
+    for(int j=0;j<m;j++){
+        a[j].reserve(3*m+n);
+        a[j].resize(m+n);
+    }
+    for(int j=0;j<m;j++){
+        int op;
+        for(int i=0;i<n;i++){
+            double tmp;
+            _input>>tmp;
+            a[j][i]=tmp;
+        }
+        _input>>b[j]>>op;
+        rows.push_back(simplex_table_row(a[j],b[j],j+n));
+        if(op==-1||op==1){
+            c0[n+j]=0.0;
+            a[j][n+j]=-op;      
+            // if(op==1)
+            //     rows[j].normalize();
+            if(a[j][n+j]*b[j]<0.0){
+                for(int _j=0;_j<m;_j++){
+                    if(j==_j){
+                        a[_j].push_back(b[j]>0.0?1.0:-1.0);
+                        rows[j].var=simplex_table_row::M++;
+                        if(b[j]<0.0)rows[j].normalize();
+                    }
+                    else a[_j].push_back(0.0);
+                }
+                c0.push_back(1.0);
+            }
+            else if(op==1)rows[j].normalize();
+        }
+        else if(op==0){
+            a[j][n+j]=b[j]>0.0?1.0:-1.0;
+            c0[n+j]=1.0;
+            if(b[j]<0.0)rows[j].normalize();
+        }
+    }
+    int e;
+    map<int,int> counterpart;
+    for(int i=0;i<n;i++){
+        _input>>e;
+        if(e==-1){
+            for(int j=0;j<m;j++){
+                rows[j].a.push_back(-rows[j].a[i]);
+                rows[j].a[i]=0.0;
+                // if(rows[j].var==i){
+                //     rows[j].var=simplex_table_row::M;
+                //     rows[j].normalize();
+                // }
+                // FIXME: CLOSED output should know this change in sign
+            }
+            z.a.push_back(-z.a[i]);     // SERIOUS
+            z.a[i]=0.0;
+            counterpart[simplex_table_row::M++]=i;
+            c0.push_back(0.0);
+        }
+        else if(e==0){
+            for(int j=0;j<m;j++)
+                rows[j].a.push_back(-rows[j].a[i]);
+            z.a.push_back(-z.a[i]);
+            counterpart[simplex_table_row::M++]=i;
+            c0.push_back(0.0);
+        }
+    }
+    _input.close();
+/********************************************
+ * end of input section
+/********************************************
+ * select the base variable bundle
+ * naive, without pivoting
+ * numerical error could be overwhelming
+*********************************************/
+    // int base_cnt;
+    // for(int i=0;i<n;i++){
+    //     base_cnt=0;
+    //     for(int j=0;j<m;j++){
+    //         if(rows[j].var!=-1)base_cnt++;
+    //         if(rows[j].var!=-1||fabs(rows[j].a[i])<EPS)continue;
+    //         rows[j].var=i;
+    //         base_cnt++;
+    //         for(int k=0;k<m;k++){
+    //             if(j==k)continue;
+    //             rows[k]-=rows[j]*(rows[k].a[i]/rows[j].a[i]);
+    //         }
+    //         z-=rows[j]*(z.a[i]/rows[j].a[i]);
+    //         rows[j].normalize();
+    //         break;
+    //     }
+    //     if(base_cnt==m)break;
+    // }
+    // base_cnt=0;
+    // for(int j=0;j<m;j++)if(rows[j].var!=-1)base_cnt++;
+    // if(base_cnt<m){
+    //     // search for zero row
+    //     for(int j=0;j<m;j++){
+    //         int i;
+    //         for(i=0;i<n;i++)if(fabs(rows[j].a[i])>EPS)break;
+    //         if(i==n){
+    //             if(rows[j].b==0.0)
+    //                 rows[j--]=rows[--m];    //elegant
+    //             else ret=-2;
+    //         }
+    //     }
+    // }
+/********************************************
+ * feasible solution not built yet (with some negative base variables)
+********************************************/
+    simplex_table_row z_stage_1(c0);
+    vector<double> back_up(c0);
+    int ret=solveLP(rows,z_stage_1);
+    if(ret==1){
+        if(-z_stage_1.b<=EPS){
+            // TODO: swap out the variables in c0 target functino which are still in the base,
+            // and change their coefficient to 0
+            for(int i=0;i<simplex_table_row::M;i++)
+                if(back_up[i]>0.0)
+                    for(int j=0;j<m;j++)rows[j].a[i]=0.0;
+            for(int j=0;j<m;j++){
+                int i=rows[j].var;
+                if(fabs(rows[j].a[i])<EPS)continue;
+                z-=rows[j]*(z.a[i]/rows[j].a[i]);
+            }
+            ret=solveLP_non_const(rows,z);
+        }
+        else ret=-2;
+    }
     switch (ret){
         case 1:
             cout<<"min z="<<(-z.b)<<endl;   // FIXME: #4 CLOSED output -0
             for(int j=0;j<m;j++){       // FIXME: CLOSED #2 use rank instead of m to be more exact
-                cout<<"x"<<rows[j].var<<"="<<setw(5)<<rows[j].b/rows[j].a[rows[j].var]<<endl;
+                    cout<<"x"<<rows[j].var<<"="<<setw(5)<<rows[j].b/rows[j].a[rows[j].var]<<endl;
             }                
             break;
         case -1:ret++;cout<<"infinate maximum"<<endl;break;
