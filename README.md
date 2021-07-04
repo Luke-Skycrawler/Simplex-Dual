@@ -1,7 +1,8 @@
 # Simplex-Dual
-an naive, test-rich implementation of simplex algorithm 
 
-unit tests
+A naive, test-rich implementation of the simplex and simplex-dual algorithms for solving Linear Programming problems.
+
+### Unit tests
 - [x] input
 - [x] 0 solution
 - [x] inf
